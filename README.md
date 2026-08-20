@@ -101,3 +101,32 @@ sample-only 지표는 discretization 차이를 확인할 수 있도록 함께 �
 soft collision penalty이므로 safety margin을 완전히 만족하지는 않습니다.
 또한 collision 회피 과정에서 jerk와 optimization runtime이 증가하는 trade-off가
 나타납니다.
+
+## Experiment 04 — Collision-Weight Sweep
+
+Exp03과 동일한 12개 stress scenario에서 collision penalty weight만 변경합니다.
+
+```text
+lambda_collision = [0, 10, 30, 100, 300, 1200, 5000, 20000]
+```
+
+```bash
+python scripts/exp04_collision_weight_sweep.py
+```
+
+결과:
+
+- `outputs/exp04_collision_weight/figure.png`
+- `outputs/exp04_collision_weight/metrics.csv`
+- `outputs/exp04_collision_weight/per_scenario.csv`
+
+현재 suite에서는 `lambda_collision=30`부터 모든 polyline collision이 제거됩니다.
+그러나 가중치를 20000까지 높여도 polyline safety margin violation은 완전히
+사라지지 않습니다. Pose sample의 violation은 계속 감소하지만 인접 pose 사이의
+line segment violation은 일정 수준에서 포화됩니다. 이는 node-only collision
+factor의 discretization 한계를 보여줍니다.
+
+가중치가 커질수록 jerk, function evaluation 수, runtime이 증가합니다.
+특히 20000에서는 120회 evaluation 제한 내 optimizer success rate가 낮아지므로,
+가중치를 계속 키우는 방법보다 segment-aware factor 또는 hard constraint를
+검토해야 합니다.
