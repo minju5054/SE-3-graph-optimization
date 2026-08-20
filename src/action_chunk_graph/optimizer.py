@@ -14,6 +14,7 @@ class GraphConfig:
     lambda_collision: float = 1200.0
     rotation_scale: float = 0.5
     max_nfev: int = 120
+    collision_factor: str = "nodes"
 
 
 def optimize_reconciled_trajectory(old, new, obstacle=None, config=None):
@@ -22,6 +23,8 @@ def optimize_reconciled_trajectory(old, new, obstacle=None, config=None):
 
     if old.shape != new.shape or old.shape[1] != 3:
         raise ValueError("Expected old/new shape [N, 3] with [x, y, theta].")
+    if config.collision_factor not in {"nodes", "segments"}:
+        raise ValueError("collision_factor must be 'nodes' or 'segments'.")
 
     n = len(old)
     current_pose = old[0].copy()
@@ -68,8 +71,25 @@ def optimize_reconciled_trajectory(old, new, obstacle=None, config=None):
             center = np.asarray(obstacle["center"], dtype=float)
             safe_radius = obstacle["radius"] + obstacle["margin"]
 
-            for i in range(1, n):
-                distance = np.linalg.norm(X[i, :2] - center)
+            if config.collision_factor == "nodes":
+                distances = [
+                    np.linalg.norm(X[i, :2] - center) for i in range(1, n)
+                ]
+            else:
+                distances = []
+                for i in range(n - 1):
+                    start = X[i, :2]
+                    segment = X[i + 1, :2] - start
+                    squared_length = np.dot(segment, segment)
+                    if squared_length > 1e-12:
+                        projection = np.dot(center - start, segment) / squared_length
+                        projection = np.clip(projection, 0.0, 1.0)
+                        closest = start + projection * segment
+                    else:
+                        closest = start
+                    distances.append(np.linalg.norm(closest - center))
+
+            for distance in distances:
                 violation = max(0.0, safe_radius - distance)
                 residuals.append(np.sqrt(config.lambda_collision) * violation)
 

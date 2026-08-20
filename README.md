@@ -130,3 +130,26 @@ factor의 discretization 한계를 보여줍니다.
 특히 20000에서는 120회 evaluation 제한 내 optimizer success rate가 낮아지므로,
 가중치를 계속 키우는 방법보다 segment-aware factor 또는 hard constraint를
 검토해야 합니다.
+
+## Experiment 05 — Segment-Aware Collision Factor
+
+기존 node-only collision factor와 각 trajectory segment의 장애물 최근접 거리를
+사용하는 segment-aware factor를 비교합니다. 기존 실험 재현성을 위해
+`GraphConfig.collision_factor`의 기본값은 `"nodes"`입니다.
+
+```bash
+python scripts/exp05_segment_collision_factor.py
+```
+
+결과:
+
+- `outputs/exp05_segment_collision/figure.png`
+- `outputs/exp05_segment_collision/metrics.csv`
+- `outputs/exp05_segment_collision/per_scenario.csv`
+
+동일한 12개 stress scenario와
+`lambda_collision = [30, 100, 300, 1200]`을 사용합니다. `lambda_collision=1200`
+에서 segment-aware factor는 node-only factor보다 평균 polyline safety-margin
+violation과 sample/polyline discretization gap을 크게 줄입니다. Segment 최근접점
+계산 때문에 runtime은 증가하며, squared soft penalty를 사용하는 한 작은 margin
+violation은 여전히 남습니다.
