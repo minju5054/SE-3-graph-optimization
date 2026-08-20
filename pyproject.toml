@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "action-chunk-graph"
 version = "0.1.0"
-description = "Toy SE(2) factor-graph optimization for action-chunk reconciliation"
+description = "Toy SE(2)/SE(3) graph optimization for action-chunk reconciliation"
 requires-python = ">=3.10,<3.13"
 dependencies = [
   "numpy>=1.26",

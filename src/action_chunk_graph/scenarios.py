@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.spatial.transform import Rotation
 
 from .geometry import heading_from_xy
 
@@ -97,3 +98,53 @@ def make_collision_scenario_suite(num_scenarios=12, num_poses=21, seed=42):
         )
 
     return scenarios
+
+
+def _rotation_vectors_from_tangents(tangents, roll):
+    forwards = tangents / np.linalg.norm(tangents, axis=1, keepdims=True)
+    world_up = np.tile(np.array([0.0, 0.0, 1.0]), (len(tangents), 1))
+    sides = np.cross(world_up, forwards)
+    sides /= np.linalg.norm(sides, axis=1, keepdims=True)
+    corrected_up = np.cross(forwards, sides)
+
+    frames = np.stack([forwards, sides, corrected_up], axis=2)
+    base_rotation = Rotation.from_matrix(frames)
+    local_roll = Rotation.from_rotvec(
+        np.column_stack([roll, np.zeros_like(roll), np.zeros_like(roll)])
+    )
+    return (base_rotation * local_roll).as_rotvec()
+
+
+def make_se3_collision_scenario(num_poses=17):
+    """Two safe 6-DoF trajectories whose point-wise blend crosses a sphere."""
+    t = np.linspace(0.0, 1.0, num_poses)
+    x = 4.0 * t
+    shape = np.sin(np.pi * t) ** 2
+    shape_derivative = np.pi * np.sin(2.0 * np.pi * t)
+
+    old_position = np.column_stack([x, 0.78 * shape, 0.32 * shape])
+    new_position = np.column_stack([x, -0.78 * shape, -0.32 * shape])
+
+    old_tangent = np.column_stack(
+        [np.full_like(t, 4.0), 0.78 * shape_derivative, 0.32 * shape_derivative]
+    )
+    new_tangent = np.column_stack(
+        [np.full_like(t, 4.0), -0.78 * shape_derivative, -0.32 * shape_derivative]
+    )
+
+    roll_amplitude = np.deg2rad(170.0)
+    old_rotation = _rotation_vectors_from_tangents(
+        old_tangent, roll_amplitude * shape
+    )
+    new_rotation = _rotation_vectors_from_tangents(
+        new_tangent, -roll_amplitude * shape
+    )
+
+    old = np.column_stack([old_position, old_rotation])
+    new = np.column_stack([new_position, new_rotation])
+    obstacle = {
+        "center": np.array([2.0, 0.0, 0.0]),
+        "radius": 0.45,
+        "margin": 0.15,
+    }
+    return old, new, obstacle

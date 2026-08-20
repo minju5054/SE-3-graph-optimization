@@ -1,7 +1,7 @@
 # Action Chunk Graph Optimization — Toy Study
 
 목표: old/new action chunk를 단순 point-wise blending하는 방법과
-SE(2) Lie-group residual 기반 graph optimization을 비교합니다.
+SE(2)/SE(3) Lie-group residual 기반 graph optimization을 비교합니다.
 
 이 저장소는 첫 proof-of-concept용입니다.
 GPU는 필요하지 않으며 SciPy CPU 최적화만 사용합니다.
@@ -153,3 +153,41 @@ python scripts/exp05_segment_collision_factor.py
 violation과 sample/polyline discretization gap을 크게 줄입니다. Segment 최근접점
 계산 때문에 runtime은 증가하며, squared soft penalty를 사용하는 한 작은 margin
 violation은 여전히 남습니다.
+
+## Experiment 06 — SE(3) Extension
+
+Pose를 `[x, y, z, rotation-vector(3)]`로 표현하고 다음 기능을 검증합니다.
+
+- SO(3) Exp/Log 기반 SE(3) Exp/Log와 relative residual
+- Raw rotation-vector blending과 shortest SO(3) geodesic blending
+- SE(3) old/new/smoothness factor
+- 구형 장애물에 대한 segment-aware collision factor
+
+```bash
+python scripts/exp06_se3_extension.py
+```
+
+결과:
+
+- `outputs/exp06_se3_extension/figure.png`
+- `outputs/exp06_se3_extension/metrics.csv`
+- `outputs/exp06_se3_extension/geometry_validation.csv`
+
+`170°`와 `-170°` rotation vector의 midpoint에서 raw Euclidean blending은 양쪽
+orientation으로부터 각각 `170°` 떨어진 자세를 생성하지만, SO(3) geodesic은
+각각 `10°` 떨어진 shortest-rotation midpoint를 생성합니다.
+
+3D collision stress case에서는 collision factor가 없는 SE(3) graph가 구형
+장애물과 충돌하고, segment-aware factor를 사용한 graph는 실제 polyline 충돌을
+피합니다. Squared soft penalty이므로 작은 safety-margin violation은 남습니다.
+
+현재 구현은 9-pose SciPy finite-difference proof-of-concept입니다. Rotation-vector
+optimization의 chart boundary, 수치 Jacobian 비용, 실시간 성능은 아직 해결된
+것으로 간주하지 않습니다. 실제 VLA 통합 전에 analytic/autodiff Jacobian 또는
+검증된 manifold optimization library를 평가해야 합니다.
+
+## Tests
+
+```bash
+python -m unittest discover -s tests -v
+```

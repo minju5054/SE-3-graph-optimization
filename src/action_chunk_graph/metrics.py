@@ -1,6 +1,6 @@
 import numpy as np
 
-from .geometry import se2_relative_log, wrap_angle
+from .geometry import se2_relative_log, se3_relative_log, wrap_angle
 
 
 def minimum_clearance(trajectory, obstacle):
@@ -94,3 +94,85 @@ def mean_rotational_deviation(trajectory, reference):
         raise ValueError("trajectory and reference must have the same shape")
     delta = wrap_angle(trajectory[:, 2] - reference[:, 2])
     return float(np.mean(np.abs(delta)))
+
+
+def spatial_minimum_clearance(trajectory, obstacle):
+    center = np.asarray(obstacle["center"], dtype=float)
+    radius = float(obstacle["radius"])
+    distances = np.linalg.norm(trajectory[:, :3] - center, axis=1)
+    return float(np.min(distances - radius))
+
+
+def spatial_collision(trajectory, obstacle):
+    return spatial_minimum_clearance(trajectory, obstacle) < 0.0
+
+
+def spatial_safety_margin_violation(trajectory, obstacle):
+    safe_radius = float(obstacle["radius"] + obstacle["margin"])
+    center = np.asarray(obstacle["center"], dtype=float)
+    distances = np.linalg.norm(trajectory[:, :3] - center, axis=1)
+    return float(np.max(np.maximum(0.0, safe_radius - distances)))
+
+
+def spatial_polyline_minimum_clearance(trajectory, obstacle):
+    if len(trajectory) < 2:
+        return spatial_minimum_clearance(trajectory, obstacle)
+
+    center = np.asarray(obstacle["center"], dtype=float)
+    radius = float(obstacle["radius"])
+    starts = trajectory[:-1, :3]
+    segments = trajectory[1:, :3] - starts
+    squared_lengths = np.sum(segments * segments, axis=1)
+    projections = np.divide(
+        np.sum((center - starts) * segments, axis=1),
+        squared_lengths,
+        out=np.zeros_like(squared_lengths),
+        where=squared_lengths > 0.0,
+    )
+    projections = np.clip(projections, 0.0, 1.0)
+    closest_points = starts + projections[:, None] * segments
+    distances = np.linalg.norm(closest_points - center, axis=1)
+    return float(np.min(distances - radius))
+
+
+def spatial_polyline_collision(trajectory, obstacle):
+    return spatial_polyline_minimum_clearance(trajectory, obstacle) < 0.0
+
+
+def spatial_polyline_safety_margin_violation(trajectory, obstacle):
+    clearance = spatial_polyline_minimum_clearance(trajectory, obstacle)
+    return float(max(0.0, float(obstacle["margin"]) - clearance))
+
+
+def spatial_translational_jerk_rms(trajectory, dt=1.0):
+    positions = trajectory[:, :3]
+    if len(positions) < 4:
+        return 0.0
+    velocity = np.diff(positions, axis=0) / dt
+    acceleration = np.diff(velocity, axis=0) / dt
+    jerk = np.diff(acceleration, axis=0) / dt
+    return float(np.sqrt(np.mean(np.sum(jerk * jerk, axis=1))))
+
+
+def spatial_rotational_increment_rms(trajectory):
+    increments = np.array(
+        [
+            se3_relative_log(trajectory[i], trajectory[i + 1])[3:]
+            for i in range(len(trajectory) - 1)
+        ]
+    )
+    return float(np.sqrt(np.mean(np.sum(increments * increments, axis=1))))
+
+
+def spatial_body_motion_smoothness(trajectory, rotation_scale=1.0):
+    twists = np.array(
+        [
+            se3_relative_log(trajectory[i], trajectory[i + 1])
+            for i in range(len(trajectory) - 1)
+        ]
+    )
+    if len(twists) < 2:
+        return 0.0
+    twists[:, 3:] *= rotation_scale
+    delta = np.diff(twists, axis=0)
+    return float(np.sqrt(np.mean(np.sum(delta * delta, axis=1))))
