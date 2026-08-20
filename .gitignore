@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+outputs/*.png
+outputs/*.csv
+outputs/**/*.png
+outputs/**/*.csv
+outputs/.~lock.*#
+.DS_Store
