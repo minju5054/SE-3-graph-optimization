@@ -111,6 +111,39 @@ def make_async_obstacle_update_scenario(
     return old, new, obstacle
 
 
+def make_constraint_severity_scenario_suite(
+    num_poses=31, observation_step=8, seed=42
+):
+    """Async detour with a fixed obstacle center and increasing radii."""
+    old, new, _ = make_async_obstacle_update_scenario(
+        num_poses=num_poses,
+        observation_step=observation_step,
+        seed=seed,
+    )
+    severity_definitions = [
+        ("low", 0.08),
+        ("medium_low", 0.14),
+        ("medium", 0.20),
+        ("medium_high", 0.26),
+        ("high", 0.32),
+    ]
+    scenarios = []
+    for severity, radius in severity_definitions:
+        scenarios.append(
+            {
+                "constraint_severity": severity,
+                "old": old.copy(),
+                "new": new.copy(),
+                "obstacle": {
+                    "center": np.array([2.0, 0.0]),
+                    "radius": radius,
+                    "margin": 0.12,
+                },
+            }
+        )
+    return scenarios
+
+
 def make_collision_scenario_suite(num_scenarios=12, num_poses=21, seed=42):
     """Create deterministic stress cases whose OLD/NEW paths pass opposite sides."""
     rng = np.random.default_rng(seed)

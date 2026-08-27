@@ -275,6 +275,95 @@ OLD unsafe or disagreement too large
 
 Threshold의 최적성은 현재 결과로 주장하지 않습니다.
 
+## Experiment 09 — Transition Window Ablation
+
+Modification point 이후 OLD→NEW local transition을 몇 pose 동안 적용할지에 따른
+reaction-smoothness trade-off를 측정합니다. Exp07의 obstacle-free asynchronous
+goal-change scenario와 global/NEW-local index alignment를 그대로 재사용합니다.
+
+```bash
+python scripts/exp09_transition_window.py
+```
+
+고정 parameter는 `dt=0.1`, `observation_step=8`,
+`inference_latency_steps=4`, `commit_horizon_steps=1`, `seed=42`이며,
+`new_ready_step=12`, `modification_step=13`입니다. Window는
+`[3, 5, 7, 10, 15]` pose, 즉 endpoint 사이 시간으로
+`[0.2, 0.4, 0.6, 0.9, 1.4]` s를 사용합니다. OLD/NEW chunk 길이 안에서 15 pose가
+유효하므로 clipping하지 않았습니다. Reaction은 modification point 이후 aligned
+NEW position error가 처음 0.05 m 이하가 되는 step으로 고정해 측정합니다. Hard
+switch는 window가 적용되지 않는 단일 reference row로 기록합니다.
+
+결과:
+
+- `outputs/exp09_transition_window/figure.png`
+- `outputs/exp09_transition_window/metrics.csv`
+
+Hermite window가 3에서 15 pose로 증가할 때 reaction time은 0.2 s에서 1.2 s,
+mean NEW position deviation은 0.0065 m에서 0.0870 m로 증가한 반면 jerk는
+25.13에서 3.65로 단조 감소했습니다. Start velocity mismatch도 0.702에서
+0.020으로, end mismatch는 0.654에서 0.152로 감소했습니다. 따라서 Hermite에는
+명확한 reaction-smoothness Pareto trade-off가 나타났습니다.
+
+Graph reaction time은 0.2 s에서 1.4 s, mean NEW deviation은 0.0061 m에서
+0.0932 m로 증가했습니다. 그러나 jerk는 window 7에서 13.84로 최소가 된 뒤
+window 15에서 15.07로 다시 증가했고, end velocity mismatch도 window 5의
+0.394에서 window 15의 0.617로 악화됐습니다. Runtime은 약 1.9 ms에서 90.0 ms로
+증가했습니다. 따라서 H3는 reaction delay와 Hermite trade-off 측면에서는
+지지되지만, 긴 window가 graph의 모든 continuity metric을 개선한다는 형태로는
+지지되지 않습니다. 모든 metric에서 우월한 단일 intermediate window도
+관찰되지 않았습니다.
+
+## Experiment 10 — Constraint-Conditioned Reconciliation
+
+Graph optimization을 항상 적용해야 하는지, 아니면 active geometric constraint가
+있을 때 선택적으로 정당화되는지를 benign/constrained regime으로 나눠 비교합니다.
+
+```bash
+python scripts/exp10_constraint_conditioned_reconciliation.py
+```
+
+두 regime 모두 `dt=0.1`, `observation_step=8`,
+`inference_latency_steps=2`, `commit_horizon_steps=1`,
+`modification_step=11`, `transition_window_poses=10`(0.9 s), `seed=42`를
+사용합니다. Constrained regime은 obstacle center와 OLD/NEW proposal을 고정하고
+radius만 `[0.08, 0.14, 0.20, 0.26, 0.32]` m로 증가시킨 5단계 severity sweep이며
+safety margin은 0.12 m입니다. 가장 높은 severity에서도 committed prefix clearance
+0.213 m와 NEW proposal clearance 0.135 m로 둘 다 margin 밖이므로 optimizer 실행
+이전 collision을 confound로 포함하지 않습니다.
+
+결과:
+
+- `outputs/exp10_constraint_conditioned/figure.png`
+- `outputs/exp10_constraint_conditioned/metrics.csv`
+
+Benign regime에서 Hermite는 collision-factor 없는 graph보다 jerk가 낮고
+(4.24 vs 10.36), start/end velocity mismatch도 작으며
+(0.022/0.123 vs 0.103/0.365), runtime도 짧았습니다(약 0.03 vs 17.76 ms).
+Mean NEW position deviation은 0.0226 m와 0.0228 m로 거의 같았습니다. 이 regime은
+constraint가 없을 때 graph가 simple transition보다 자동으로 우월하지 않다는
+negative result를 재확인합니다.
+
+Constrained regime에서는 Hermite가 medium부터 물리적으로 충돌했고, collision
+factor가 없는 graph는 medium-high부터 충돌했습니다. Segment-aware collision
+graph는 5단계 모두 물리적 충돌을 피하고 minimum clearance를 약 0.119--0.157 m로
+유지했습니다. 다만 squared soft penalty이므로 high severity에서 safety-margin
+violation 0.00075 m가 남았고, jerk는 37.30에서 47.74로, runtime은 약
+33--95 ms 범위로 증가했습니다. Hard switch도 모든 severity에서 충돌을 피했지만
+0.143 m/0.606 rad의 start pose jump와 jerk 40.06을 만들었습니다.
+
+따라서 H4는 이 deterministic scenario family 안에서 부분적으로 지지됩니다.
+Constraint-aware graph는 zero start-pose jump를 유지하며 Hermite와 unconstrained
+graph가 충돌하는 severity에서도 collision을 회피했지만, hard switch가 유일한
+안전 대안은 아니며 graph도 exact safety margin이나 낮은 jerk를 보장하지
+않습니다. 현재 결과로 learned gating, 최적 severity threshold, 다양한 geometry에
+대한 일반화 또는 실제 robot/VLA 성능은 주장할 수 없습니다.
+
+Exp09/10은 planar robot을 가정하는 연구가 아니라 execution timing, modification
+point, transition horizon 및 constraint-conditioned method selection을 isolation한
+SE(2) toy study입니다. Mechanism과 boundary continuity가 더 정리된 뒤 별도로
+SE(3) validation을 수행해야 합니다.
+
 ## Tests
 
 ```bash

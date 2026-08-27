@@ -11,8 +11,15 @@ from action_chunk_graph.execution import (
     local_transition_windows,
     new_local_index,
 )
+from action_chunk_graph.metrics import (
+    polyline_minimum_clearance,
+    steps_to_aligned_position_tolerance,
+)
 from action_chunk_graph.optimizer import GraphConfig, optimize_reconciled_trajectory
-from action_chunk_graph.scenarios import make_async_goal_change_scenario
+from action_chunk_graph.scenarios import (
+    make_async_goal_change_scenario,
+    make_constraint_severity_scenario_suite,
+)
 
 
 class ExecutionProtocolTest(unittest.TestCase):
@@ -130,6 +137,78 @@ class ExecutionProtocolTest(unittest.TestCase):
         np.testing.assert_array_equal(default_trajectory, disabled_trajectory)
         self.assertEqual(default_result.nfev, disabled_result.nfev)
         self.assertEqual(default_result.cost, disabled_result.cost)
+
+    def test_configured_transition_windows_and_raw_new_suffix(self):
+        for window_poses in (3, 5, 7, 10, 15):
+            config = ExecutionConfig(
+                observation_step=8,
+                inference_latency_steps=4,
+                commit_horizon_steps=1,
+                optimization_window_poses=window_poses,
+            )
+            old_window, new_window = local_transition_windows(
+                self.old, self.new, config
+            )
+            self.assertEqual(len(old_window), window_poses)
+            self.assertEqual(len(new_window), window_poses)
+            transition = cubic_hermite_crossfade(old_window, new_window)
+            trajectory = assemble_local_transition(
+                self.old, self.new, transition, config
+            )
+            committed = build_committed_prefix(self.old, config)
+            np.testing.assert_array_equal(
+                trajectory[: config.modification_step],
+                committed[: config.modification_step],
+            )
+            suffix_start = (
+                new_local_index(config.modification_step, config)
+                + window_poses
+            )
+            np.testing.assert_array_equal(
+                trajectory[config.modification_step + window_poses :],
+                self.new[suffix_start:],
+            )
+
+    def test_reaction_metric_uses_observation_aligned_new(self):
+        config = ExecutionConfig(
+            observation_step=8,
+            inference_latency_steps=4,
+            commit_horizon_steps=1,
+            optimization_window_poses=5,
+        )
+        trajectory = assemble_hard_switch(self.old, self.new, config)
+        steps = steps_to_aligned_position_tolerance(
+            trajectory,
+            self.new,
+            config.observation_step,
+            config.modification_step,
+            tolerance=0.0,
+        )
+        self.assertEqual(steps, 0)
+
+    def test_constraint_suite_has_safe_prefix_and_new_proposals(self):
+        config = ExecutionConfig(
+            observation_step=8,
+            inference_latency_steps=2,
+            commit_horizon_steps=1,
+            optimization_window_poses=10,
+        )
+        scenarios = make_constraint_severity_scenario_suite()
+        self.assertEqual(
+            [case["constraint_severity"] for case in scenarios],
+            ["low", "medium_low", "medium", "medium_high", "high"],
+        )
+        for case in scenarios:
+            prefix = build_committed_prefix(case["old"], config)
+            obstacle = case["obstacle"]
+            self.assertGreater(
+                polyline_minimum_clearance(prefix, obstacle),
+                obstacle["margin"],
+            )
+            self.assertGreater(
+                polyline_minimum_clearance(case["new"], obstacle),
+                obstacle["margin"],
+            )
 
 
 if __name__ == "__main__":

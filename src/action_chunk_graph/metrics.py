@@ -96,6 +96,64 @@ def mean_rotational_deviation(trajectory, reference):
     return float(np.mean(np.abs(delta)))
 
 
+def transition_velocity_mismatches(
+    trajectory, modification_step, transition_window_poses, dt=1.0
+):
+    """Velocity discontinuity at the start and end of a local transition."""
+    if dt <= 0.0:
+        raise ValueError("dt must be positive.")
+    if modification_step < 1:
+        raise ValueError("modification_step must have an incoming segment.")
+    if transition_window_poses < 1:
+        raise ValueError("transition_window_poses must be positive.")
+
+    end_step = modification_step + transition_window_poses - 1
+    if modification_step + 1 >= len(trajectory) or end_step + 1 >= len(trajectory):
+        raise ValueError("Trajectory does not include both transition boundaries.")
+
+    incoming_start = (
+        trajectory[modification_step, :2]
+        - trajectory[modification_step - 1, :2]
+    ) / dt
+    outgoing_start = (
+        trajectory[modification_step + 1, :2]
+        - trajectory[modification_step, :2]
+    ) / dt
+    incoming_end = (
+        trajectory[end_step, :2] - trajectory[end_step - 1, :2]
+    ) / dt
+    outgoing_end = (
+        trajectory[end_step + 1, :2] - trajectory[end_step, :2]
+    ) / dt
+    return (
+        float(np.linalg.norm(outgoing_start - incoming_start)),
+        float(np.linalg.norm(outgoing_end - incoming_end)),
+    )
+
+
+def steps_to_aligned_position_tolerance(
+    trajectory,
+    new,
+    observation_step,
+    modification_step,
+    tolerance,
+):
+    """First step after modification whose pose is close to aligned NEW."""
+    if tolerance < 0.0:
+        raise ValueError("tolerance must be non-negative.")
+    start_new = modification_step - observation_step
+    if start_new < 0:
+        raise ValueError("modification_step precedes the NEW observation origin.")
+    executed = trajectory[modification_step:, :2]
+    reference = new[start_new:, :2]
+    if executed.shape != reference.shape:
+        raise ValueError("Executed and aligned NEW suffixes must have equal shape.")
+
+    errors = np.linalg.norm(executed - reference, axis=1)
+    reached = np.flatnonzero(errors <= tolerance)
+    return int(reached[0]) if len(reached) else None
+
+
 def spatial_minimum_clearance(trajectory, obstacle):
     center = np.asarray(obstacle["center"], dtype=float)
     radius = float(obstacle["radius"])

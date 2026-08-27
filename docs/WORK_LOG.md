@@ -84,3 +84,52 @@
 - **Commit reference:** `SELF (git log -1 -- docs/WORK_LOG.md 로 확인)`.
 - **Branch:** `main`.
 - **Push 결과:** `origin/main`에 정상 push 예정; 실제 결과는 종료 채팅에서 보고.
+
+### 2026-08-27 17:25:48 KST - Transition window 및 constraint-conditioned reconciliation
+
+- **작업 목적:** H3의 transition reaction-smoothness trade-off와 H4의
+  constraint-conditioned graph optimization 필요성을 SE(2) async execution에서
+  검증한다.
+- **변경한 내용:** Exp09에 `[3, 5, 7, 10, 15]` pose transition-window sweep,
+  0.05 m aligned-NEW reaction metric, Hermite/SE(2) graph/Hard-switch reference 및
+  CSV·figure를 구현했다. Exp10에 benign regime과 obstacle radius
+  `[0.08, 0.14, 0.20, 0.26, 0.32]` m constrained severity suite, Hermite,
+  collision-factor 유/무 graph, Hard switch 비교 및 CSV·figure를 구현했다.
+  Reusable velocity-boundary/reaction metric과 scenario generator, window/suffix/prefix
+  invariant test 3개를 추가하고 README에 실제 결과와 연구 범위를 기록했다.
+- **변경된 주요 파일:** `scripts/exp09_transition_window.py`,
+  `scripts/exp10_constraint_conditioned_reconciliation.py`,
+  `src/action_chunk_graph/metrics.py`, `src/action_chunk_graph/scenarios.py`,
+  `tests/test_execution_protocol.py`, `README.md`, `docs/WORK_LOG.md`.
+- **실행한 명령어:** `git status --short --branch`;
+  `git branch --show-current`; `git remote -v`; `git log --oneline -5`;
+  `git fetch origin`; `git rev-parse`; `sed`; `.venv/bin/python -m py_compile`;
+  `.venv/bin/python -m unittest discover -s tests -v`;
+  `MPLBACKEND=Agg .venv/bin/python scripts/exp07_async_action_update.py`;
+  `scripts/exp08_inference_behavior.py`; `scripts/exp09_transition_window.py`;
+  `scripts/exp10_constraint_conditioned_reconciliation.py`; Pandas 기반 CSV schema,
+  output, committed-prefix invariant 확인; `git diff --check`.
+- **테스트 / 검증 결과:** 기존 15개와 신규 3개를 합친 unit test 18개가 모두
+  통과했고 Exp07/08 회귀 및 Exp09/10 실행에 성공했다. Exp09 11 rows와 Exp10
+  23 rows의 CSV 및 figure가 생성됐고 모든 row의 modification 이전 prefix
+  position/rotation error는 0이었다. Exp10의 모든 severity에서 committed prefix와
+  NEW proposal은 0.12 m safety margin 밖이었다.
+- **정량 결과:** Exp09 Hermite window 3→15에서 reaction 0.2→1.2 s, jerk
+  25.13→3.65, mean NEW deviation 0.0065→0.0870 m였다. Graph reaction은
+  0.2→1.4 s였지만 jerk는 window 7에서 13.84로 최소 후 15.07로 증가했고 end
+  mismatch도 window 5의 0.394에서 window 15의 0.617로 증가했다. Graph runtime은
+  약 1.9→90.0 ms였다. Exp10 benign에서 Hermite/graph jerk는 4.24/10.36,
+  runtime은 약 0.03/17.76 ms였다. Constrained에서 Hermite는 medium부터,
+  collision-factor 없는 graph는 medium-high부터 충돌했으며 segment collision
+  graph는 전 severity에서 collision을 피했다.
+- **문제 / 주의사항:** H3는 reaction-Hermite smoothness trade-off만 지지하고 긴
+  window가 graph의 모든 continuity를 개선한다는 형태는 지지하지 않았다. H4는
+  현재 deterministic geometry family에서만 부분 지지된다. Collision graph는 high
+  severity에서 0.00075 m safety-margin violation, jerk 47.74와 약 76 ms runtime을
+  남겼고 Hard switch도 collision-free지만 0.143 m/0.606 rad pose jump를 만들었다.
+  단일 path/obstacle-center family이므로 일반화, 최적 threshold, learned gating,
+  실제 VLA/robot 성능은 주장하지 않는다. 생성 output은 `.gitignore`에 따라 commit
+  대상이 아니다.
+- **Commit reference:** `SELF (git log -1 -- docs/WORK_LOG.md 로 확인)`.
+- **Branch:** `main`.
+- **Push 결과:** `origin/main`에 정상 push 예정; 실제 결과는 종료 채팅에서 보고.
