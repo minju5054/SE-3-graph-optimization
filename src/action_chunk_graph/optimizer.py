@@ -16,6 +16,7 @@ class GraphConfig:
     rotation_scale: float = 0.5
     max_nfev: int = 120
     collision_factor: str = "nodes"
+    lambda_terminal_new: float = 0.0
 
 
 @dataclass
@@ -78,6 +79,14 @@ def optimize_reconciled_trajectory(old, new, obstacle=None, config=None):
         for i in range(len(twists) - 1):
             residuals.extend(
                 np.sqrt(config.lambda_smooth) * (twists[i + 1] - twists[i])
+            )
+
+        if config.lambda_terminal_new > 0.0:
+            terminal_residual = scaled_twist(
+                se2_relative_log(new[-1], X[-1])
+            )
+            residuals.extend(
+                np.sqrt(config.lambda_terminal_new) * terminal_residual
             )
 
         if obstacle is not None:

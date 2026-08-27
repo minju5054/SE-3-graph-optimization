@@ -52,6 +52,65 @@ def make_smoothness_stitch_scenario(num_poses=31):
     return old, new
 
 
+def make_async_goal_change_scenario(num_poses=31, observation_step=8, seed=42):
+    """Deterministic OLD chunk and observation-relative NEW goal proposal."""
+    if not 0 <= observation_step < num_poses:
+        raise ValueError("observation_step must index the OLD chunk.")
+    # The seed is explicit in the protocol even though this scenario is analytic.
+    np.random.default_rng(seed)
+
+    t_old = np.linspace(0.0, 1.0, num_poses)
+    x_old = 4.0 * t_old
+    y_old = np.zeros_like(t_old)
+    old = np.column_stack(
+        [x_old, y_old, heading_from_xy(x_old, y_old)]
+    )
+
+    u = np.linspace(0.0, 1.0, num_poses)
+    x_new = old[observation_step, 0] + 4.0 * u
+    smoothstep = 3.0 * u**2 - 2.0 * u**3
+    y_new = 1.35 * smoothstep
+    dx_du = np.full_like(u, 4.0)
+    dy_du = 1.35 * (6.0 * u - 6.0 * u**2)
+    theta_new = np.arctan2(dy_du, dx_du)
+    new = np.column_stack([x_new, y_new, theta_new])
+    new[0] = old[observation_step]
+    return old, new
+
+
+def make_async_obstacle_update_scenario(
+    num_poses=31, observation_step=8, seed=42
+):
+    """Synthetic newly observed obstacle on OLD and a safe NEW detour."""
+    if not 0 <= observation_step < num_poses:
+        raise ValueError("observation_step must index the OLD chunk.")
+    np.random.default_rng(seed)
+
+    t_old = np.linspace(0.0, 1.0, num_poses)
+    x_old = 4.0 * t_old
+    y_old = np.zeros_like(t_old)
+    old = np.column_stack(
+        [x_old, y_old, heading_from_xy(x_old, y_old)]
+    )
+
+    u = np.linspace(0.0, 1.0, num_poses)
+    x_new = old[observation_step, 0] + 4.0 * u
+    detour_amplitude = 1.50
+    y_new = detour_amplitude * np.sin(np.pi * u) ** 2
+    dx_du = np.full_like(u, 4.0)
+    dy_du = detour_amplitude * np.pi * np.sin(2.0 * np.pi * u)
+    theta_new = np.arctan2(dy_du, dx_du)
+    new = np.column_stack([x_new, y_new, theta_new])
+    new[0] = old[observation_step]
+
+    obstacle = {
+        "center": np.array([2.0, 0.0]),
+        "radius": 0.28,
+        "margin": 0.15,
+    }
+    return old, new, obstacle
+
+
 def make_collision_scenario_suite(num_scenarios=12, num_poses=21, seed=42):
     """Create deterministic stress cases whose OLD/NEW paths pass opposite sides."""
     rng = np.random.default_rng(seed)

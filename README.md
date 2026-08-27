@@ -186,9 +186,97 @@ optimization의 chart boundary, 수치 Jacobian 비용, 실시간 성능은 아�
 것으로 간주하지 않습니다. 실제 VLA 통합 전에 analytic/autodiff Jacobian 또는
 검증된 manifold optimization library를 평가해야 합니다.
 
+## Experiment 07 — Async Action-Chunk Update
+
+VLA inference를 직접 실행하는 대신 SE(2) toy chunk로 다음 execution timeline을
+명시적으로 검증합니다.
+
+```text
+observation -> inference 동안 OLD 계속 실행 -> NEW ready -> committed action
+            -> modification point부터 7-pose local transition -> raw NEW suffix
+```
+
+```bash
+python scripts/exp07_async_action_update.py
+```
+
+주요 parameter는 `dt=0.1`, `observation_step=8`,
+`latency_steps=[0, 2, 4, 6]`, `commit_horizon_steps=1`,
+`optimization_window_poses=7`, `seed=42`입니다. NEW local index는
+`global_step - observation_step`으로 명시적으로 정렬합니다. 비교 방법은
+Continue OLD, Hard switch, Local cubic Hermite, Local SE(2) graph입니다. Graph의
+terminal NEW anchor는 이 실험에서만 활성화되며 기존 실험의 기본값은 0입니다.
+
+결과:
+
+- `outputs/exp07_async_action_update/figure.png`
+- `outputs/exp07_async_action_update/metrics.csv`
+
+CSV에는 committed-prefix position/rotation error, transition 양쪽의 jump와 velocity
+mismatch, jerk·rotation·body-motion smoothness, aligned NEW deviation, 최종 NEW pose
+error, runtime과 optimizer diagnostics를 기록합니다. 현재 결과에서 latency가
+0.0 s에서 0.6 s로 증가하면 modification step은 9에서 15로 정확히 이동합니다.
+Hard-switch position jump는 0.0044 m에서 0.1862 m로, rotation jump는 0.0652 rad에서
+0.3475 rad로 증가했습니다. Hermite와 graph는 start pose jump를 모두 0으로
+유지했지만, 이 scenario에서는 Hermite가 graph보다 start/end velocity mismatch와
+jerk가 낮았습니다. Graph는 Hermite보다 aligned NEW position deviation이 약간
+작았고 runtime은 약 8.4--8.7 ms로 100 ms control period보다 짧았습니다. 모든
+method/latency에서 modification 이전 committed-prefix error는 정확히 0이었습니다.
+Terminal position anchor만으로 NEW suffix 경계의 velocity continuity가 보장되지는
+않으므로 graph가 모든 smoothness metric에서 우세하다고 해석하지 않습니다.
+
+## Experiment 08 — Inference-Time Behavior
+
+관측 시점에 OLD future path 위의 synthetic obstacle을 새로 알게 되었다고 가정하고,
+inference 동안 `continue_old`와 `hold_pose`를 비교합니다. Perception, braking
+controller 또는 실제 VLA는 구현하지 않습니다. NEW가 ready된 뒤에는 두 policy
+모두 동일한 segment-aware Local SE(2) graph transition을 사용합니다.
+
+```bash
+python scripts/exp08_inference_behavior.py
+```
+
+주요 parameter는 `dt=0.1`, `observation_step=8`,
+`latency_steps=[0, 2, 4, 6, 8]`, `commit_horizon_steps=0`,
+`optimization_window_poses=7`, `seed=42`입니다.
+
+결과:
+
+- `outputs/exp08_inference_behavior/figure.png`
+- `outputs/exp08_inference_behavior/metrics.csv`
+
+`collision_before_new_ready`와 `minimum_clearance_before_new_ready`는 optimizer가
+실행되기 전 policy 결과를 분리해 측정합니다. 전체 polyline collision/clearance,
+inference 중 이동 거리, smoothness, NEW tracking, optimizer runtime과 diagnostics도
+함께 저장합니다. 고정된 현재 scenario에서 `continue_old`는 0.6 s부터 NEW가
+ready되기 전에 충돌했고, `hold_pose`는 0.8 s까지 충돌 없이 observation pose의
+0.6533 m clearance를 유지했습니다. Hold의 inference 중 이동 거리는 0인 반면
+continue-old는 latency 0.2--0.8 s에서 0.267--1.067 m 진행했습니다. Hold의
+modification 이후 평균 NEW position deviation은 0.0029 m에서 0.1854 m로
+증가했습니다. Continue-old의 충돌 case는 optimizer가 성공을 보고해도 이미
+실행된 fixed prefix를 복구할 수 없었으며 full trajectory collision도 남았습니다.
+이는 optimizer 결과와 inference-time safety decision을 별도로 해석해야 함을
+보여주는 toy counterexample입니다.
+
+두 실험은 실제 VLA 성능이나 최적 gating threshold를 검증하지 않습니다. 현재
+결과가 동기를 제공하는 future decision structure는 다음과 같습니다.
+
+```text
+OLD safe + OLD/NEW difference small
+    -> continue OLD
+
+moderate OLD/NEW disagreement
+    -> local reconciliation
+
+OLD unsafe or disagreement too large
+    -> do not blindly stitch
+       hold / fallback / replan
+```
+
+Threshold의 최적성은 현재 결과로 주장하지 않습니다.
+
 ## Tests
 
 ```bash
 python -m unittest discover -s tests -v
 ```
-                                                               
