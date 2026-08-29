@@ -364,6 +364,102 @@ point, transition horizon 및 constraint-conditioned method selection을 isolati
 SE(2) toy study입니다. Mechanism과 boundary continuity가 더 정리된 뒤 별도로
 SE(3) validation을 수행해야 합니다.
 
+## Experiment 11 — Context-Conditioned Execution Decision
+
+단일 update가 아니라 12 s episode 안의 반복적인 asynchronous update에서 하나의
+fixed policy가 safety, progress, smoothness, response, computation을 동시에 만족하는지,
+그리고 관측 가능한 context만 사용하는 2-stage rule이 더 합리적인 trade-off를
+만드는지 평가합니다.
+
+```bash
+python scripts/exp11_execution_decision.py
+```
+
+기본 설정은 `dt=0.1`, 120 control steps, 31-pose local chunk,
+`commit_horizon_steps=1`, Exp09의 intermediate point인 7-pose transition window,
+30 episodes와 episode당 4 updates(총 120 external events)입니다. Seed는 42--71이고,
+latency는 1--8 steps, 첫 observation은 step 12--16, 이후 event 간격은 21--28
+steps입니다. Goal-y 변화는 event당 `[-0.85, 0.85]` m에서 누적 후
+`[-1.45, 1.45]` m로 제한합니다. Obstacle은 72% 확률로 존재하며 nominal
+observation x보다 0.35--1.35 m 앞, lateral offset `[-0.48, 0.48]` m,
+radius 0.18--0.34 m, safety margin 0.12--0.20 m의 연속 범위를 사용합니다.
+외부 event schedule은 policy들이 공유하지만 robot state와 executable suffix는 각
+policy가 독립적으로 rollout합니다.
+
+비교 policy는 Continue+Hard, Continue+Hermite, Continue+collision-aware Graph,
+Hold+Graph, Context-conditioned입니다. OLD horizon이 latency와 1-step commit을
+덮지 못하면 fixed continue policy도 남은 OLD를 실행한 뒤 hold합니다. Context
+policy의 Stage A는 NEW를 입력으로 받지 않고 observation에서 알려진 obstacle과 OLD
+future만으로 inference 이전 clearance를 검사해 `continue_old`,
+`continue_then_hold`, `hold_pose`를 고릅니다. Stage B는 NEW-ready 이후에만 다음
+cascade를 적용합니다.
+
+```text
+direct pose disagreement <= 0.04 m and 0.08 rad, and direct candidate safe
+    -> Hard switch
+otherwise Hermite candidate satisfies the requested obstacle margin
+    -> Local cubic Hermite
+otherwise
+    -> 7-pose segment-aware collision graph
+graph failure, collision, or margin failure after independent validation
+    -> hold + replan_required
+```
+
+Graph acceptance에는 numerical soft-penalty 특성을 고려한 0.002 m tolerance를
+명시적으로 사용합니다. 이 값들은 학습하거나 evaluation 결과로 최적화한 threshold가
+아니라 사전에 고정한 engineering assumptions입니다. OLD/NEW disagreement는 SE(2)
+relative Log의 translation과 `rotation_scale=0.5`인 rotation을 함께 사용한 평균
+norm입니다.
+
+결과:
+
+- `outputs/exp11_execution_decision/figure.png`
+- `outputs/exp11_execution_decision/event_metrics.csv`
+- `outputs/exp11_execution_decision/episode_metrics.csv`
+- `outputs/exp11_execution_decision/summary.csv`
+- `outputs/exp11_execution_decision/decision_counts.csv`
+
+Event CSV는 context, 선택, pre/post-NEW collision, clearance, progress, boundary
+mismatch, local jerk, NEW tracking, optimizer/runtime 및 deadline miss를 기록합니다.
+Episode CSV의 task progress는 final-x minus initial-x, hold duration은 hold로 실행된
+control interval의 합, collision count는 각 event obstacle의 active interval에서
+충돌한 event 수입니다. Response delay는 modification 이후 aligned NEW position
+error가 0.05 m 이하가 되는 최초 시간이며, Hard switch가 0 s인 것은 이 metric의
+정의상 생기는 expected artifact입니다.
+
+실제 30-episode 결과에서 Continue+Hard, Continue+Hermite, Continue+Graph의
+episode collision rate는 각각 40.0%, 56.7%, 30.0%였고, pre-NEW collision event
+rate는 8.33%, 8.33%, 5.83%였습니다. Hold+Graph와 Context-conditioned는 모두
+actual collision 0건이었습니다. Context policy는 120 events에서 Stage A로
+`continue_old` 64회, `continue_then_hold` 42회, `hold_pose` 14회를 선택했고,
+Stage B 결과는 Hard 10회, Hermite 71회, accepted Graph 20회,
+`replan_required` 19회였습니다. 즉 graph 호출은 평균 1.3회/episode로 fixed Graph의
+4.0회보다 적었습니다. 평균 episode computation은 약 83.6 ms로 Continue+Graph
+138.0 ms와 Hold+Graph 112.1 ms보다 낮았습니다.
+
+Positive result는 context cascade가 이 distribution에서 avoidable collision을
+없애면서 Hold+Graph보다 hold duration(2.29 vs 3.18 s), jerk RMS(50.66 vs 94.60),
+graph 호출을 줄였다는 점입니다. 그러나 중요한 negative result로 task progress는
+Context 12.31 m가 Hold+Graph 12.72 m보다 낮았고, 19/120 events에서 soft graph를
+accept하지 못해 replan/hold fallback이 발생했습니다. 이 중 일부는
+observation-relative NEW 자체의 aligned suffix가 requested margin을 만족하지 못한
+transition-infeasible event이므로 graph optimizer의 실패만으로 해석하지 않습니다.
+Continue+Hard/Hermite는
+14.08 m로 더 진행했지만 collision과 교환한 결과입니다. 따라서 H5는
+**partially supported**입니다. Fixed policy가 모든 축을 dominate하지 않고 context
+selection의 safety/compute 이점은 관찰됐지만, “always hold보다 task progress도
+유지한다”는 부분은 지지되지 않았습니다.
+
+현재 generator는 non-overlapping event를 사용하지만 매 event마다 policy의 실제
+executable suffix를 OLD로 다시 snapshot하므로 overlapping update를 수용할 구조는
+갖습니다. 실제 overlap, sensing/model uncertainty, dynamic obstacle, braking,
+threshold sensitivity, 더 넓은 distribution 및 graph fallback planner는 검증하지
+않았습니다. Known geometry를 쓰는 SE(2) toy distribution 결과이므로 optimal policy,
+robot safety guarantee, 실제 VLA 일반화, 최적 graph-gating threshold는 주장할 수
+없습니다. 다음 우선순위는 threshold를 학습하는 것이 아니라, fixed rule을 유지한
+채 overlapping updates와 noisy clearance prediction을 독립 변수로 추가하는
+robustness experiment입니다.
+
 ## Tests
 
 ```bash

@@ -133,3 +133,63 @@
 - **Commit reference:** `SELF (git log -1 -- docs/WORK_LOG.md 로 확인)`.
 - **Branch:** `main`.
 - **Push 결과:** `origin/main`에 정상 push 예정; 실제 결과는 종료 채팅에서 보고.
+
+### 2026-08-29 13:25:16 KST - Context-conditioned multi-update execution decision
+
+- **작업 목적:** H5, 즉 mixed asynchronous regime에서 단일 fixed strategy가 모든
+  safety/progress/smoothness/response/compute 축을 지배하지 않으며 OLD-only
+  inference decision과 NEW-ready transition cascade를 분리한 context mechanism이
+  더 합리적인 trade-off를 만드는지 검증한다.
+- **변경한 내용:** NEW나 hidden label을 입력으로 받지 않는 Stage-A
+  `continue_old`/`continue_then_hold`/`hold_pose` rule과, NEW-ready 이후 direct,
+  Hermite, segment-aware collision graph, validated replan fallback을 고르는 Stage-B
+  rule을 추가했다. Seed별 external event schedule은 공유하되 5개 policy가 실제
+  executable suffix와 current state를 독립 rollout하는 12 s multi-update episode,
+  event/episode metric 집계, summary/decision-count CSV와 6-panel figure를 구현했다.
+  Graph success와 실제 polyline collision/margin을 별도로 검증하고 invalid result는
+  실행하지 않고 hold한다.
+- **정확한 실험 설정:** `dt=0.1`, 120 steps, 31-pose chunk, 30 episodes,
+  episode당 4 updates(총 120 external events, policy 평가 row 600개), seed 42--71,
+  latency 1--8 steps, commit 1 step, fixed transition window 7 poses, NEW tolerance
+  0.05 m이다. Goal delta는 event당 `[-0.85, 0.85]` m, obstacle probability 0.72,
+  along-track offset 0.35--1.35 m, lateral offset `[-0.48, 0.48]` m, radius
+  0.18--0.34 m, margin 0.12--0.20 m이다. Direct threshold는 0.04 m/0.08 rad,
+  graph safety acceptance tolerance는 0.002 m로 사전 고정했다.
+- **변경된 주요 파일:** `src/action_chunk_graph/decision.py`,
+  `src/action_chunk_graph/multi_update.py`,
+  `scripts/exp11_execution_decision.py`, `tests/test_execution_decision.py`,
+  `README.md`, `docs/WORK_LOG.md`.
+- **실행한 명령어:** `git status --short --branch`; `git branch --show-current`;
+  `git remote -v`; `git log --oneline -5`; `git fetch origin`; `sed`; `rg`;
+  `.venv/bin/python -m py_compile`; `.venv/bin/python -m unittest discover -s tests -v`;
+  `MPLBACKEND=Agg .venv/bin/python scripts/exp07_async_action_update.py`부터
+  `scripts/exp10_constraint_conditioned_reconciliation.py`까지 회귀 실행;
+  `MPLBACKEND=Agg .venv/bin/python scripts/exp11_execution_decision.py`; Pandas 기반
+  CSV schema, causality, prefix, finite metric, collision timing, decision count 확인;
+  `file`; image inspection; `git diff --check`.
+- **테스트 / 검증 결과:** 기존 18개와 신규 11개를 합친 unit test 29개가 모두
+  통과했다. Exp07--Exp10 script 회귀와 Exp11 actual run이 성공했고 figure 및
+  event/episode/summary/decision-count CSV가 생성됐다. Exp11의 600 event rows에서
+  `new_used_before_new_ready=False`, committed-prefix maximum error 0, 필수 episode
+  metric finite invariant를 확인했다. Exp07--Exp10 output도 정상 재생성됐다.
+- **정량 결과:** Continue+Hard/Hermite/Graph의 episode collision rate는
+  40.0%/56.7%/30.0%, pre-NEW collision event rate는 8.33%/8.33%/5.83%였다.
+  Hold+Graph와 Context는 collision 0건이었다. Context Stage A는 continue 64회,
+  continue-then-hold 42회, hold 14회였고 Stage B는 Hard 10회, Hermite 71회,
+  accepted Graph 20회, replan 19회였다. Context는 fixed Graph의 4.0회 대신 평균
+  1.3회 graph를 호출했고 평균 episode compute는 83.6 ms였다(Continue+Graph
+  138.0 ms, Hold+Graph 112.1 ms). Hold duration/jerk는 Context 2.29 s/50.66,
+  Hold+Graph 3.18 s/94.60이었다.
+- **문제 / 제한 / negative result:** Context progress 12.31 m는 Hold+Graph
+  12.72 m보다 낮아 H5의 progress 절은 지지되지 않았다. Continue+Hard/Hermite의
+  14.08 m progress는 collision과 교환한 결과였다. Context의 19 replan 중 일부는
+  observation-relative NEW aligned suffix 자체가 requested margin을 위반한
+  transition-infeasible event이고 나머지는 local soft optimizer limitation이므로
+  graph failure 하나로 해석하지 않는다. H5는 partially supported이다. 현재
+  distribution은 non-overlapping events, known static circle geometry, deterministic
+  seeds와 사전 고정 rule을 사용한다. Threshold 최적성, uncertainty robustness,
+  dynamic obstacles, real VLA/robot safety 및 SE(3) 일반화는 evidence가 부족하다.
+  생성 output은 `.gitignore` 정책에 따라 commit하지 않는다.
+- **Commit reference:** `SELF (git log -1 -- docs/WORK_LOG.md 로 확인)`.
+- **Branch:** `main`.
+- **Push 결과:** `origin/main`에 정상 push 예정; 실제 결과는 종료 채팅에서 보고.
